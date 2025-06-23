@@ -21,15 +21,34 @@ const addGuest = (req, res) => {
   insertarInvitado(data, res);
 };
 
-// Obtener todas las fotos con paginación
+// Obtener todas las fotos con paginación y filtrado por tags
 const getAllPhotos = (req, res) => {
   // Parámetros de paginación (valores predeterminados: página 1, 10 elementos por página)
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 10;
   const offset = (page - 1) * limit;
   
-  // Consulta para obtener el número total de fotos
-  dbBoda.query('SELECT COUNT(*) AS total FROM fotos_boda', (countErr, countResults) => {
+  // Parámetro de filtrado por tags (incluir solo fotos que contengan este tag)
+  const includeTag = req.query.tags;
+  
+  console.log(`🔍 Filtrando fotos - Incluir solo tag: "${includeTag}"`);
+  
+  // Construir la consulta base
+  let countQuery = 'SELECT COUNT(*) AS total FROM fotos_boda';
+  let dataQuery = 'SELECT * FROM fotos_boda';
+  
+  // Si se especifica un tag para incluir, agregar la condición WHERE
+  if (includeTag) {
+    const whereCondition = `WHERE JSON_SEARCH(tags, 'one', ?, null) IS NOT NULL`;
+    countQuery += ` ${whereCondition}`;
+    dataQuery += ` ${whereCondition}`;
+  }
+  
+  // Agregar ordenamiento y paginación
+  dataQuery += ` ORDER BY uploaded_at DESC LIMIT ${limit} OFFSET ${offset}`;
+  
+  // Consulta para obtener el número total de fotos (con filtro si aplica)
+  dbBoda.query(countQuery, includeTag ? [includeTag] : [], (countErr, countResults) => {
     if (countErr) {
       console.error('❌ Error al contar fotos:', countErr);
       return res.status(500).json({ error: 'Error al contar fotos' });
@@ -38,10 +57,10 @@ const getAllPhotos = (req, res) => {
     const total = countResults[0].total;
     const totalPages = Math.ceil(total / limit);
     
-    // Consulta paginada
-    const query = `SELECT * FROM fotos_boda ORDER BY uploaded_at DESC LIMIT ${limit} OFFSET ${offset}`;
+    console.log(`📊 Total de fotos después del filtro: ${total}`);
     
-    dbBoda.query(query, (err, results) => {
+    // Consulta paginada con filtro
+    dbBoda.query(dataQuery, includeTag ? [includeTag] : [], (err, results) => {
       if (err) {
         console.error('❌ Error al obtener fotos:', err);
         return res.status(500).json({ error: 'Error al obtener fotos' });
@@ -64,6 +83,9 @@ const getAllPhotos = (req, res) => {
       console.log("Fotos detalladas:", JSON.stringify(fotos.slice(0, 1), null, 2));
       
       console.log(`✅ Se han recuperado ${fotos.length} fotos (página ${page} de ${totalPages})`);
+      if (includeTag) {
+        console.log(`✅ Solo fotos que contienen el tag: "${includeTag}"`);
+      }
       
       // Respuesta con metadatos de paginación
       res.json({
@@ -73,6 +95,9 @@ const getAllPhotos = (req, res) => {
           totalPages,
           currentPage: page,
           limit
+        },
+        filtros: {
+          includeTag: includeTag || null
         }
       });
     });
@@ -99,10 +124,9 @@ const getPhotoCountByCategory = (req, res) => {
       try {
         const tags = JSON.parse(row.tags || '[]');
         tags.forEach(tag => {
-          // Si el tag tiene un formato "Categoría/Subcategoría", nos quedamos con la categoría principal
-          const mainCategory = tag.split('/')[0];
-          if (mainCategory) {
-            categoryCounts[mainCategory] = (categoryCounts[mainCategory] || 0) + 1;
+          // Usar el tag completo en lugar de solo la categoría principal
+          if (tag) {
+            categoryCounts[tag] = (categoryCounts[tag] || 0) + 1;
           }
         });
       } catch (parseError) {

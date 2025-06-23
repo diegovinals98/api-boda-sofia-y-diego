@@ -396,6 +396,10 @@ const send_email = (email, nombre_completo, asistira, numero_acompanantes, restr
       if (acompanante.cancion_preferencia) {
         acompanantesHTML += `<p style="margin: 5px 0;"><span style="color: #e17055;">🎵 Canción preferida:</span> ${acompanante.cancion_preferencia}${acompanante.plataforma_musica ? ` (${acompanante.plataforma_musica})` : ''}</p>`;
       }
+
+      if (acompanante.color) {
+        acompanantesHTML += `<p style="margin: 5px 0;"><span style="color: #e17055;">🎨 Color asignado:</span> ${acompanante.color}</p>`;
+      }
       
       acompanantesHTML += '</div>';
     });
