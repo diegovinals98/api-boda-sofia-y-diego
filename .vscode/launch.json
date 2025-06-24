@@ -1,0 +1,56 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug Backend Boda",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/src/server.js",
+      "env": {
+        "PORT": "3030",
+        "NODE_ENV": "development"
+      },
+      "console": "integratedTerminal",
+      "restart": true,
+      "protocol": "inspector",
+      "port": 9229,
+      "skipFiles": [
+        "<node_internals>/**"
+      ],
+      "outputCapture": "std"
+    },
+    {
+      "name": "Debug Backend Boda (Nodemon)",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/node_modules/nodemon/bin/nodemon.js",
+      "args": [
+        "--env",
+        "src/server.js"
+      ],
+      "env": {
+        "PORT": "3030",
+        "NODE_ENV": "development"
+      },
+      "console": "integratedTerminal",
+      "restart": true,
+      "protocol": "inspector",
+      "port": 9229,
+      "skipFiles": [
+        "<node_internals>/**"
+      ]
+    },
+    {
+      "name": "Debug Backend Boda (Attach)",
+      "type": "node",
+      "request": "attach",
+      "port": 9229,
+      "restart": true,
+      "localRoot": "${workspaceFolder}",
+      "remoteRoot": "${workspaceFolder}",
+      "skipFiles": [
+        "<node_internals>/**"
+      ]
+    }
+  ]
+} 

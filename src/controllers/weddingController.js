@@ -1,5 +1,39 @@
 const { dbBoda } = require('../config/database');
 const { insertarInvitado, insertarFoto } = require('../services/socketio');
+const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
+const sharp = require('sharp');
+
+// Configuración de AWS S3 v3
+const s3Client = new S3Client({
+  region: process.env.AWS_REGION,
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  }
+});
+
+console.log('[S3 CONFIG v3]', {
+  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY ? '***HIDDEN***' : 'MISSING',
+  region: process.env.AWS_REGION,
+  bucket: process.env.AWS_S3_BUCKET_NAME
+});
+
+// Función helper para subir archivo a S3
+const uploadToS3 = async (buffer, key, mimetype, metadata = {}) => {
+  const uploadParams = {
+    Bucket: process.env.AWS_S3_BUCKET_NAME,
+    Key: key,
+    Body: buffer,
+    ContentType: mimetype,
+    Metadata: metadata
+  };
+
+  const command = new PutObjectCommand(uploadParams);
+  await s3Client.send(command);
+  
+  return `https://${process.env.AWS_S3_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${key}`;
+};
 
 // Obtener todos los invitados
 const getAllGuests = (req, res) => {
@@ -72,6 +106,7 @@ const getAllPhotos = (req, res) => {
         return {
           id: foto.id,
           imageUrl: foto.url,
+          imageUrlThumb: foto.imageUrlThumb || foto.url, // Usar miniatura si existe, sino la original
           title: foto.title,
           tags: JSON.parse(foto.tags || '[]'),
           metadata: JSON.parse(foto.metadata || '{}'),
@@ -139,10 +174,125 @@ const getPhotoCountByCategory = (req, res) => {
   });
 };
 
+// Subir foto a S3 y devolver el enlace
+const uploadPhotoToS3 = async (req, res) => {
+  try {
+    console.log('📸 Iniciando subida de foto a S3');
+    console.log('🔍 Variables de entorno S3:', {
+      bucket: process.env.AWS_S3_BUCKET_NAME,
+      region: process.env.AWS_REGION,
+      accessKey: process.env.AWS_ACCESS_KEY_ID ? 'PRESENT' : 'MISSING'
+    });
+    
+    // Verificar si se recibió el archivo
+    if (!req.file) {
+      return res.status(400).json({ 
+        error: 'No se proporcionó ningún archivo',
+        message: 'Debe enviar una imagen en el campo "photo"'
+      });
+    }
+
+    const { title, tags, metadata } = req.body;
+    
+    // Generar nombre único para el archivo
+    const timestamp = Date.now();
+    const fileName = `fotos-boda/${timestamp}-${title || 'foto'}.jpg`;
+    const thumbnailFileName = `fotos-boda/thumbnails/${timestamp}-${title || 'foto'}.jpg`;
+    
+    console.log('📁 Nombre del archivo generado:', fileName);
+    console.log('🖼️ Nombre de la miniatura:', thumbnailFileName);
+    
+    // Convertir metadata a string para S3
+    const stringifiedMetadata = {};
+    if (metadata) {
+      try {
+        const parsedMetadata = JSON.parse(metadata);
+        Object.keys(parsedMetadata).forEach(key => {
+          if (typeof parsedMetadata[key] !== 'object') {
+            stringifiedMetadata[key] = String(parsedMetadata[key]);
+          }
+        });
+      } catch (error) {
+        console.warn('⚠️ Error al parsear metadata, usando como string:', error);
+        stringifiedMetadata.raw = metadata;
+      }
+    }
+
+    // Metadata común para ambas imágenes
+    const commonMetadata = {
+      title: title || 'Foto de boda',
+      tags: JSON.stringify(tags ? tags.split(',') : []),
+      uploadedAt: new Date().toISOString(),
+      ...stringifiedMetadata
+    };
+
+    console.log('🚀 Generando miniatura...');
+    
+    // Generar miniatura con Sharp
+    const thumbnailBuffer = await sharp(req.file.buffer)
+      .rotate() // Preservar orientación EXIF
+      .resize(300, 300, { 
+        fit: 'cover',
+        position: 'center'
+      })
+      .jpeg({ quality: 80 })
+      .toBuffer();
+
+    console.log('✅ Miniatura generada, tamaño:', thumbnailBuffer.length, 'bytes');
+
+    // Subir imagen original y miniatura en paralelo
+    console.log('🚀 Subiendo imagen original y miniatura a S3...');
+    
+    const [imageUrl, thumbnailUrl] = await Promise.all([
+      uploadToS3(req.file.buffer, fileName, req.file.mimetype, commonMetadata),
+      uploadToS3(thumbnailBuffer, thumbnailFileName, 'image/jpeg', {
+        ...commonMetadata,
+        isThumbnail: 'true'
+      })
+    ]);
+    
+    console.log('✅ Imagen original subida:', imageUrl);
+    console.log('✅ Miniatura subida:', thumbnailUrl);
+    
+    // Respuesta exitosa
+    res.status(200).json({ 
+      success: true,
+      message: 'Foto y miniatura subidas a S3 con éxito 🎉',
+      data: {
+        imageUrl: imageUrl,
+        imageUrlThumb: thumbnailUrl,
+        fileName: fileName,
+        thumbnailFileName: thumbnailFileName,
+        title: title,
+        tags: tags ? tags.split(',') : [],
+        metadata: metadata ? JSON.parse(metadata) : {},
+        uploadedAt: new Date().toISOString()
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Error al subir foto a S3:', error);
+    console.error('❌ Error details:', {
+      code: error.code,
+      message: error.message,
+      statusCode: error.statusCode,
+      requestId: error.requestId
+    });
+    
+    res.status(500).json({ 
+      success: false,
+      error: 'Error al subir foto a S3',
+      message: error.message,
+      details: error.code || 'Unknown error'
+    });
+  }
+};
+
 module.exports = {
   getAllGuests,
   addGuest,
   getAllPhotos,
   addPhoto,
-  getPhotoCountByCategory
+  getPhotoCountByCategory,
+  uploadPhotoToS3
 }; 

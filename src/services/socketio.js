@@ -1,7 +1,8 @@
 const { Server } = require('socket.io');
 const { dbBoda } = require('../config/database');
 const nodemailer = require('nodemailer');
-const AWS = require('aws-sdk');
+const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
+const { v4: uuidv4 } = require('uuid');
 
 // Variable global para el servidor Socket.IO
 let io;
@@ -15,11 +16,13 @@ const transporter = nodemailer.createTransport({
   }
 });
 
-// Configuración de AWS S3
-const s3 = new AWS.S3({
-  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-  region: process.env.AWS_REGION || 'us-east-1'
+// Configuración de AWS S3 v3
+const s3Client = new S3Client({
+  region: process.env.AWS_REGION,
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  }
 });
 
 const setupWebSocket = (server) => {
@@ -42,14 +45,29 @@ const setupWebSocket = (server) => {
 
     // Manejar evento de nueva foto
     socket.on('photo-uploaded', async (data) => {
-      console.log("Tipo socket nueva foto");
+      console.log("📸 Socket nueva foto recibida");
       try {
-        // Primero guardar en S3
-        const imageUrl = await guardarFotoS3(data, null, socket);
-        // Luego insertar en la base de datos con la URL de S3
-        insertarFoto({ ...data.data, imageUrl }, null, socket);
+        // Verificar que la foto tenga URL de S3
+        if (!data.data || !data.data.imageUrl) {
+          console.error('❌ Error: La foto debe tener imageUrl');
+          const mensaje_error = { 
+            tipo: 'confirmacion', 
+            data: "not ok", 
+            error: 'La foto debe tener imageUrl' 
+          };
+          io.emit('confirmacion', mensaje_error);
+          return;
+        }
+
+        console.log("✅ Guardando foto en BD con URL:", data.data.imageUrl);
+        // Guardar en la base de datos
+        insertarFoto(data.data, null, socket);
       } catch (error) {
-        console.error('Error en el proceso de subida de foto:', error);
+        console.error('❌ Error en el proceso de guardado de foto:', error);
+        const mensaje_error = { 
+          data: "not ok", 
+        };
+        io.emit('confirmacion', mensaje_error);
       }
     });
 
@@ -63,7 +81,7 @@ const setupWebSocket = (server) => {
 
 const guardarFotoS3 = async (data, res = null, socket = null) => {
   console.log("Guardando foto en S3");
-  console.log(data);
+
   
   try {
     const { blob, title, tags, metadata, uploadedAt } = data.data;
@@ -124,12 +142,13 @@ const guardarFotoS3 = async (data, res = null, socket = null) => {
 
     // Subir a S3
     try {
-      const result = await s3.upload(uploadParams).promise();
+      const command = new PutObjectCommand(uploadParams);
+      const result = await s3Client.send(command);
       
-      console.log('✅ Foto subida exitosamente a S3:', result.Location);
+      // Construir la URL de la imagen (SDK v3 no devuelve Location automáticamente)
+      const imageUrl = `https://${process.env.AWS_S3_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${fileName}`;
       
-      // Retornar la URL de la imagen
-      const imageUrl = result.Location;
+      console.log('✅ Foto subida exitosamente a S3:', imageUrl);
       
       // Emitir confirmación de éxito
       const confirmacion = { tipo: 'confirmacion', data: "ok", imageUrl };
@@ -169,7 +188,7 @@ const guardarFotoS3 = async (data, res = null, socket = null) => {
     console.error('❌ Error al guardar foto en S3:', error);
     
     const mensaje_error = { 
-      tipo: 'confirmacion', 
+      tipo: 'Guardar foto en S3', 
       data: "not ok", 
       error: error.message 
     };
@@ -187,51 +206,101 @@ const guardarFotoS3 = async (data, res = null, socket = null) => {
 };
 
 const insertarFoto = (data, res = null, socket = null) => {
-  const { imageUrl, title, tags, metadata, uploadedAt } = data;
+  try {
+    const { id, imageUrl, imageUrlThumb, title, tags, metadata } = data;
 
-  // Generar un ID único para la foto
-  const id = Date.now().toString();
-  
-  const query = `
-    INSERT INTO fotos_boda (id, url, title, tags, metadata, uploaded_at) 
-    VALUES (?, ?, ?, ?, ?, NOW())`;
+    // Usar el ID del frontend si está disponible, sino generar uno nuevo con UUID v4
+    const fotoId = uuidv4();
+    
+    const query = `
+      INSERT INTO fotos_boda (id, url, imageUrlThumb, title, tags, metadata) 
+      VALUES ( ?, ?, ?, ?, ?, ?)`;
 
-  dbBoda.query(query, [id, imageUrl, title, JSON.stringify(tags), JSON.stringify(metadata)], (err, result) => {
-    if (err) {
-      const mensaje_error = { tipo: 'confirmacion', data: "not ok" };
+    try {
+      dbBoda.query(query, [
+        fotoId, 
+        imageUrl, 
+        imageUrlThumb || imageUrl, // Si no hay miniatura, usar la imagen original
+        title, 
+        JSON.stringify(tags), 
+        JSON.stringify(metadata)
+      ], (err, result) => {
+        if (err) {
+          console.error('❌ Error en la consulta SQL:', err);
+          console.error('❌ Query ejecutada:', query);
+          console.error('❌ Parámetros:', [fotoId, imageUrl, imageUrlThumb, title, JSON.stringify(tags), JSON.stringify(metadata)]);
+          
+          const mensaje_error = { tipo: 'confirmacion', data: "not ok", error: err.message };
+          io.emit('confirmacion', mensaje_error);
+          
+          if (res) res.status(500).json({ 
+            error: 'Error al guardar foto en la base de datos',
+            details: err.message,
+            sqlError: err.sqlMessage || err.code
+          });
+          return;
+        }
+
+        console.log("✔️ Foto guardada en la base de datos con ID:", fotoId);
+
+        const nuevaFoto = {
+          id: fotoId,
+          imageUrl,
+          imageUrlThumb: imageUrlThumb || imageUrl,
+          title,
+          tags,
+          metadata
+        };
+
+        const confirmacion = {data: "ok" };
+        io.emit('confirmacion', confirmacion);
+
+        io.emit('nueva_categoria', nuevaFoto.tags); 
+
+        const mensaje = { data: nuevaFoto };
+        io.emit('nueva_foto', mensaje);
+
+        console.log('✅ Nueva foto agregada y emitida por Socket.IO:', {
+          id: nuevaFoto.id,
+          title: nuevaFoto.title,
+          tags: nuevaFoto.tags,
+          metadata: nuevaFoto.metadata
+        });
+
+        if (res) {
+          res.status(201).json({ id: fotoId, message: 'Foto guardada con éxito 🎉' });
+        }
+      });
+    } catch (dbError) {
+      console.error('❌ Error inesperado en la consulta a la base de datos:', dbError);
+      console.error('❌ Stack trace:', dbError.stack);
+      
+      const mensaje_error = { tipo: 'BBDD', data: "not ok", error: dbError.message };
       io.emit('confirmacion', mensaje_error);
-      console.error('❌ Error al guardar foto:', err);
-      if (res) res.status(500).json({ error: 'Error al guardar foto' });
-      return;
+      
+      if (res) {
+        res.status(500).json({ 
+          error: 'Error inesperado en la base de datos',
+          details: dbError.message,
+          stack: dbError.stack
+        });
+      }
     }
-
-    const nuevaFoto = {
-      id: id,
-      imageUrl,
-      title,
-      tags,
-      metadata,
-      uploadedAt: new Date().toISOString()
-    };
-
-    const confirmacion = { tipo: 'confirmacion', data: "ok" };
-    io.emit('confirmacion', confirmacion);
-
-    const mensaje = { tipo: 'nueva_foto', data: nuevaFoto };
-    io.emit('nueva_foto', mensaje);
-
-    console.log('✅ Nueva foto agregada y emitida por Socket.IO:', {
-      id: nuevaFoto.id,
-      title: nuevaFoto.title,
-      tags: nuevaFoto.tags,
-      metadata: nuevaFoto.metadata,
-      uploadedAt: nuevaFoto.uploadedAt
-    });
-
+  } catch (error) {
+    console.error('❌ Error inesperado en insertarFoto:', error);
+    console.error('❌ Stack trace:', error.stack);
+    
+    const mensaje_error = { tipo: 'BBDD', data: "not ok", error: error.message };
+    io.emit('confirmacion', mensaje_error);
+    
     if (res) {
-      res.status(201).json({ id: id, message: 'Foto guardada con éxito 🎉' });
+      res.status(500).json({ 
+        error: 'Error inesperado al guardar foto',
+        details: error.message,
+        stack: error.stack
+      });
     }
-  });
+  }
 };
 
 const insertarInvitado = (data, res = null, socket = null) => {
