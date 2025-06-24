@@ -44,7 +44,7 @@ router.use((error, req, res, next) => {
       return res.status(400).json({
         success: false,
         error: 'Archivo demasiado grande',
-        message: 'El archivo no puede ser mayor a 10MB'
+        message: 'El archivo no puede ser mayor a 50MB'
       });
     }
   }

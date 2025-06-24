@@ -31,4 +31,15 @@ app.use(cors({
 app.use('/', weddingRoutes);
 app.use('/', adminRoutes);
 
+// Middleware global de manejo de errores para forzar headers de CORS
+app.use((err, req, res, next) => {
+  res.header('Access-Control-Allow-Origin', req.headers.origin || 'https://memories.bodasofiaydiego.es');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  if (err.status === 413) {
+    return res.status(413).json({ error: 'Archivo demasiado grande' });
+  }
+  next(err);
+});
+
 module.exports = { app, server }; 
