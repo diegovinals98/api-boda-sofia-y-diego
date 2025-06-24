@@ -22,7 +22,10 @@ setupWebSocket(server);
 
 // Middlewares
 app.use(express.json());
-app.use(cors());
+app.use(cors({
+  origin: ['https://memories.bodasofiaydiego.es', 'http://localhost:3000'],
+  credentials: true
+}));
 
 // Rutas
 app.use('/', weddingRoutes);

@@ -37,6 +37,32 @@ const setupWebSocket = (server) => {
     console.log('📡 Nuevo cliente conectado a Socket.IO');
     console.log('🔗 Clientes conectados actualmente:', io.engine.clientsCount);
 
+    // Manejar evento para unirse a rooms de tags
+    socket.on('join_tag_rooms', (tags) => {
+      console.log('🏷️ Cliente se une a rooms de tags:', tags);
+      if (Array.isArray(tags)) {
+        tags.forEach(tag => {
+          if (tag && typeof tag === 'string') {
+            socket.join(tag);
+            console.log(`✅ Cliente unido al room: ${tag}`);
+          }
+        });
+      }
+    });
+
+    // Manejar evento para salir de rooms de tags
+    socket.on('leave_tag_rooms', (tags) => {
+      console.log('🚪 Cliente sale de rooms de tags:', tags);
+      if (Array.isArray(tags)) {
+        tags.forEach(tag => {
+          if (tag && typeof tag === 'string') {
+            socket.leave(tag);
+            console.log(`✅ Cliente salió del room: ${tag}`);
+          }
+        });
+      }
+    });
+
     // Manejar evento de nuevo invitado
     socket.on('nuevo_invitado', (data) => {
       console.log("Tipo socket nuevo invitado");
@@ -258,7 +284,20 @@ const insertarFoto = (data, res = null, socket = null) => {
         io.emit('nueva_categoria', nuevaFoto.tags); 
 
         const mensaje = { data: nuevaFoto };
-        io.emit('nueva_foto', mensaje);
+        
+        // Emitir la nueva foto a los rooms específicos de cada tag
+        if (nuevaFoto.tags && Array.isArray(nuevaFoto.tags) && nuevaFoto.tags.length > 0) {
+          nuevaFoto.tags.forEach(tag => {
+            if (tag && typeof tag === 'string') {
+              console.log(`📤 Enviando nueva foto al room: ${tag}`);
+              io.to(tag).emit('nueva_foto', mensaje);
+            }
+          });
+        } else {
+          // Si no hay tags, emitir a todos (fallback)
+          console.log('📤 Enviando nueva foto a todos (sin tags específicos)');
+          io.emit('nueva_foto', mensaje);
+        }
 
         console.log('✅ Nueva foto agregada y emitida por Socket.IO:', {
           id: nuevaFoto.id,
