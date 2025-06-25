@@ -59,7 +59,7 @@ const addGuest = (req, res) => {
 const getAllPhotos = (req, res) => {
   // Parámetros de paginación (valores predeterminados: página 1, 10 elementos por página)
   const page = parseInt(req.query.page) || 1;
-  const limit = parseInt(req.query.limit) || 10;
+  const limit = parseInt(req.query.limit) || 50;
   const offset = (page - 1) * limit;
   
   // Parámetro de filtrado por tags (incluir solo fotos que contengan este tag)
