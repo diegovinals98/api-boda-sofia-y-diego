@@ -24,7 +24,8 @@ setupWebSocket(server);
 app.use(express.json());
 app.use(cors({
   origin: ['https://memories.bodasofiaydiego.es', 'http://localhost:3000'],
-  credentials: true
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
 }));
 
 // Rutas
