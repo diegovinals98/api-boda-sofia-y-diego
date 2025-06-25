@@ -288,11 +288,80 @@ const uploadPhotoToS3 = async (req, res) => {
   }
 };
 
+// Obtener el número de likes para una foto y la lista de usuarios
+const getPhotoLikes = (req, res) => {
+  const photoId = req.params.photoId;
+  if (!photoId) {
+    return res.status(400).json({ error: 'photoId es requerido' });
+  }
+  const query = 'SELECT user_name FROM foto_likes WHERE photo_id = ?';
+  dbBoda.query(query, [photoId], (err, results) => {
+    if (err) {
+      console.error('❌ Error al obtener likes:', err);
+      return res.status(500).json({ error: 'Error al obtener likes' });
+    }
+    const users = results.map(r => r.user_name);
+    res.json({ photoId, likes: users.length, users });
+  });
+};
+
+// Obtener el número de likes por foto para todas las fotos de una categoría, incluyendo la lista de usuarios
+const getLikesByCategory = (req, res) => {
+  const tag = req.query.tag;
+  if (!tag) {
+    return res.status(400).json({ error: 'El parámetro tag es requerido' });
+  }
+  // Seleccionar las fotos de la categoría
+  const photosQuery = `
+    SELECT f.id AS photoId
+    FROM fotos_boda f
+    WHERE JSON_SEARCH(f.tags, 'one', ?, NULL) IS NOT NULL
+    ORDER BY f.uploaded_at DESC
+  `;
+  dbBoda.query(photosQuery, [tag], (err, photoResults) => {
+    if (err) {
+      console.error('❌ Error al obtener fotos por categoría:', err);
+      return res.status(500).json({ error: 'Error al obtener fotos por categoría' });
+    }
+    if (photoResults.length === 0) {
+      return res.json({ tag, likesByPhoto: [] });
+    }
+    // Obtener los likes y usuarios para cada foto
+    const photoIds = photoResults.map(r => r.photoId);
+    const likesQuery = `
+      SELECT photo_id, user_name
+      FROM foto_likes
+      WHERE photo_id IN (${photoIds.map(() => '?').join(',')})
+    `;
+    dbBoda.query(likesQuery, photoIds, (err, likeResults) => {
+      if (err) {
+        console.error('❌ Error al obtener likes por foto:', err);
+        return res.status(500).json({ error: 'Error al obtener likes por foto' });
+      }
+      // Agrupar usuarios por fotoId
+      const likesMap = {};
+      likeResults.forEach(like => {
+        if (!likesMap[like.photo_id]) likesMap[like.photo_id] = [];
+        likesMap[like.photo_id].push(like.user_name);
+      });
+      // Construir la respuesta
+      const likesByPhoto = photoIds.map(photoId => ({
+        photoId,
+        likes: likesMap[photoId] ? likesMap[photoId].length : 0,
+        users: likesMap[photoId] || []
+      }));
+      res.json({ tag, likesByPhoto });
+    });
+  });
+};
+
 module.exports = {
   getAllGuests,
   addGuest,
   getAllPhotos,
   addPhoto,
   getPhotoCountByCategory,
-  uploadPhotoToS3
+  uploadPhotoToS3,
+  getPhotoLikes,
+  getLikesByCategory
 }; 

@@ -34,6 +34,12 @@ router.post('/api/fotos', weddingController.addPhoto);
 // Obtener estadísticas de fotos por categoría
 router.get('/api/fotos/stats/count-by-category', weddingController.getPhotoCountByCategory);
 
+// Obtener el número de likes de una foto
+router.get('/api/fotos/:photoId/likes', weddingController.getPhotoLikes);
+
+// Obtener los likes por foto de todas las fotos de una categoría
+router.get('/api/fotos/likes/by-category', weddingController.getLikesByCategory);
+
 // Subir foto a S3
 router.post('/upload-photo', upload.single('photo'), weddingController.uploadPhotoToS3);
 

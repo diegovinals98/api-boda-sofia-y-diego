@@ -97,6 +97,69 @@ const setupWebSocket = (server) => {
       }
     });
 
+    // Evento para guardar like en la base de datos
+    socket.on('send-like', (data) => {
+      const { photoId, userName } = data;
+      if (!photoId || !userName) return;
+
+      // Primero, comprobar si ya existe el like
+      const checkQuery = 'SELECT 1 FROM foto_likes WHERE photo_id = ? AND user_name = ? LIMIT 1';
+      dbBoda.query(checkQuery, [photoId, userName], (checkErr, checkResults) => {
+        if (checkErr) {
+          console.error('❌ Error al comprobar like existente:', checkErr);
+          socket.emit('like-status', { success: false, error: checkErr.message });
+          return;
+        }
+        if (checkResults.length > 0) {
+          // Ya existe el like, eliminarlo (unlike)
+          const deleteQuery = 'DELETE FROM foto_likes WHERE photo_id = ? AND user_name = ?';
+          dbBoda.query(deleteQuery, [photoId, userName], (delErr, delResult) => {
+            if (delErr) {
+              console.error('❌ Error al eliminar like:', delErr);
+              socket.emit('like-status', { success: false, error: delErr.message });
+              return;
+            }
+            socket.emit('like-status', { success: true, photoId, userName, removed: true });
+            // NO emitir a los rooms cuando se elimina el like
+          });
+          return;
+        }
+        // Si no existe, insertar el like
+        const likeQuery = `
+          INSERT INTO foto_likes (photo_id, user_name)
+          VALUES (?, ?)
+        `;
+        dbBoda.query(likeQuery, [photoId, userName], (err, result) => {
+          if (err) {
+            console.error('❌ Error al guardar like:', err);
+            socket.emit('like-status', { success: false, error: err.message });
+            return;
+          }
+          socket.emit('like-status', { success: true, photoId, userName });
+
+          // Consultar los tags de la foto
+          dbBoda.query('SELECT tags FROM fotos_boda WHERE id = ?', [photoId], (err, results) => {
+            if (err || !results.length) {
+              console.error('❌ Error al obtener tags de la foto:', err);
+              return;
+            }
+            let tags = [];
+            try {
+              tags = JSON.parse(results[0].tags || '[]');
+            } catch (e) {
+              tags = [];
+            }
+            // Emitir a cada room de tag SOLO cuando se añade un like
+            tags.forEach(tag => {
+              if (tag && typeof tag === 'string') {
+                io.to(tag).emit('photo-liked', { photoId, userName });
+              }
+            });
+          });
+        });
+      });
+    });
+
     socket.on('disconnect', () => {
       console.log('❌ Cliente desconectado, clientes restantes:', io.engine.clientsCount);
     });
