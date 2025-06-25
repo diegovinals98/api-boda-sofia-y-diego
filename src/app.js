@@ -21,17 +21,21 @@ setupWebSocket(server);
 
 // Middlewares
 app.use(express.json());
-app.use(cors({
+
+// Configuración explícita de CORS
+const corsOptions = {
   origin: ['https://memories.bodasofiaydiego.es', 'http://localhost:3000'],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Origin', 'X-Requested-With', 'Content-Type', 'Accept'], // Especifica los encabezados permitidos
-}));
+  allowedHeaders: ['Origin', 'X-Requested-With', 'Content-Type', 'Accept'],
+};
 
-// Manejador explícito para solicitudes OPTIONS
+app.use(cors(corsOptions));
+
+// Manejador explícito para todas las solicitudes OPTIONS con 200
 app.options('*', (req, res) => {
   res.status(200).set({
-    'Access-Control-Allow-Origin': req.headers.origin || 'https://memories.bodasofiaydiego.es',
+    'Access-Control-Allow-Origin': req.headers.origin || 'http://localhost:3000',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Origin, X-Requested-With, Content-Type, Accept',
     'Access-Control-Allow-Credentials': 'true',
@@ -42,9 +46,9 @@ app.options('*', (req, res) => {
 app.use('/', weddingRoutes);
 app.use('/', adminRoutes);
 
-// Middleware global de manejo de errores para forzar headers de CORS en caso de error
+// Middleware global de manejo de errores
 app.use((err, req, res, next) => {
-  res.header('Access-Control-Allow-Origin', req.headers.origin || 'https://memories.bodasofiaydiego.es');
+  res.header('Access-Control-Allow-Origin', req.headers.origin || 'http://localhost:3000');
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
   res.header('Access-Control-Allow-Credentials', 'true');
   if (err.status === 413) {
