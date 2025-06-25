@@ -8,7 +8,6 @@ const http = require('http');
 const { setupWebSocket } = require('./services/socketio');
 
 // Rutas
-
 const weddingRoutes = require('./routes/wedding');
 const adminRoutes = require('./routes/admin');
 
@@ -25,14 +24,25 @@ app.use(express.json());
 app.use(cors({
   origin: ['https://memories.bodasofiaydiego.es', 'http://localhost:3000'],
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Origin', 'X-Requested-With', 'Content-Type', 'Accept'], // Especifica los encabezados permitidos
 }));
+
+// Manejador explícito para solicitudes OPTIONS
+app.options('*', (req, res) => {
+  res.status(200).set({
+    'Access-Control-Allow-Origin': req.headers.origin || 'https://memories.bodasofiaydiego.es',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Origin, X-Requested-With, Content-Type, Accept',
+    'Access-Control-Allow-Credentials': 'true',
+  }).send();
+});
 
 // Rutas
 app.use('/', weddingRoutes);
 app.use('/', adminRoutes);
 
-// Middleware global de manejo de errores para forzar headers de CORS
+// Middleware global de manejo de errores para forzar headers de CORS en caso de error
 app.use((err, req, res, next) => {
   res.header('Access-Control-Allow-Origin', req.headers.origin || 'https://memories.bodasofiaydiego.es');
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
@@ -43,4 +53,4 @@ app.use((err, req, res, next) => {
   next(err);
 });
 
-module.exports = { app, server }; 
+module.exports = { app, server };
