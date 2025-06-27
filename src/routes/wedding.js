@@ -43,6 +43,9 @@ router.get('/api/fotos/likes/by-category', weddingController.getLikesByCategory)
 // Subir foto a S3
 router.post('/upload-photo', upload.single('photo'), weddingController.uploadPhotoToS3);
 
+// Actualizar el nombre de usuario en fotos_boda y foto_likes
+router.put('/api/users/update-name', weddingController.updateUserName);
+
 // Middleware para manejar errores de multer
 router.use((error, req, res, next) => {
   if (error instanceof multer.MulterError) {

@@ -355,6 +355,46 @@ const getLikesByCategory = (req, res) => {
   });
 };
 
+// Actualizar el nombre de usuario en fotos_boda y foto_likes
+const updateUserName = (req, res) => {
+  const { weddingCode, oldUserName, newUserName } = req.body;
+  if (!weddingCode || !oldUserName || !newUserName) {
+    return res.status(400).json({ error: 'Faltan parámetros requeridos' });
+  }
+  // Actualizar uploader_name en fotos_boda
+  const updateUploaderName = new Promise((resolve, reject) => {
+    const query = `UPDATE fotos_boda SET uploader_name = ? WHERE uploader_name = ?`;
+    dbBoda.query(query, [newUserName, oldUserName], (err, result) => {
+      if (err) return reject(err);
+      resolve(result.affectedRows);
+    });
+  });
+  // Actualizar metadata.autor en fotos_boda
+  const updateFotosBodaMetadata = new Promise((resolve, reject) => {
+    const query = `UPDATE fotos_boda SET metadata = JSON_REPLACE(metadata, '$.autor', ?) WHERE JSON_EXTRACT(metadata, '$.autor') = ?`;
+    dbBoda.query(query, [newUserName, oldUserName], (err, result) => {
+      if (err) return reject(err);
+      resolve(result.affectedRows);
+    });
+  });
+  // Actualizar en foto_likes
+  const updateFotoLikes = new Promise((resolve, reject) => {
+    const query = `UPDATE foto_likes SET user_name = ? WHERE user_name = ?`;
+    dbBoda.query(query, [newUserName, oldUserName], (err, result) => {
+      if (err) return reject(err);
+      resolve(result.affectedRows);
+    });
+  });
+  Promise.all([updateUploaderName, updateFotosBodaMetadata, updateFotoLikes])
+    .then(([uploaderRows, bodaRows, likeRows]) => {
+      res.json({ success: true, updatedUploaderName: uploaderRows, updatedFotosBodaMetadata: bodaRows, updatedFotoLikes: likeRows });
+    })
+    .catch(err => {
+      console.error('❌ Error al actualizar nombre de usuario:', err);
+      res.status(500).json({ error: 'Error al actualizar nombre de usuario', details: err.message });
+    });
+};
+
 module.exports = {
   getAllGuests,
   addGuest,
@@ -363,5 +403,6 @@ module.exports = {
   getPhotoCountByCategory,
   uploadPhotoToS3,
   getPhotoLikes,
-  getLikesByCategory
+  getLikesByCategory,
+  updateUserName
 }; 

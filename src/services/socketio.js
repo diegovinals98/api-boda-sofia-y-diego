@@ -296,14 +296,14 @@ const guardarFotoS3 = async (data, res = null, socket = null) => {
 
 const insertarFoto = (data, res = null, socket = null) => {
   try {
-    const { id, imageUrl, imageUrlThumb, title, tags, metadata } = data;
+    const { id, imageUrl, imageUrlThumb, title, tags, metadata, userName } = data;
 
     // Usar el ID del frontend si está disponible, sino generar uno nuevo con UUID v4
     const fotoId = uuidv4();
     
     const query = `
-      INSERT INTO fotos_boda (id, url, imageUrlThumb, title, tags, metadata) 
-      VALUES ( ?, ?, ?, ?, ?, ?)`;
+      INSERT INTO fotos_boda (id, url, imageUrlThumb, title, tags, metadata, uploader_name) 
+      VALUES ( ?, ?, ?, ?, ?, ?, ?)`;
 
     try {
       dbBoda.query(query, [
@@ -312,12 +312,13 @@ const insertarFoto = (data, res = null, socket = null) => {
         imageUrlThumb || imageUrl, // Si no hay miniatura, usar la imagen original
         title, 
         JSON.stringify(tags), 
-        JSON.stringify(metadata)
+        JSON.stringify(metadata),
+        userName || null
       ], (err, result) => {
         if (err) {
           console.error('❌ Error en la consulta SQL:', err);
           console.error('❌ Query ejecutada:', query);
-          console.error('❌ Parámetros:', [fotoId, imageUrl, imageUrlThumb, title, JSON.stringify(tags), JSON.stringify(metadata)]);
+          console.error('❌ Parámetros:', [fotoId, imageUrl, imageUrlThumb, title, JSON.stringify(tags), JSON.stringify(metadata), userName]);
           
           const mensaje_error = { tipo: 'confirmacion', data: "not ok", error: err.message };
           io.emit('confirmacion', mensaje_error);
@@ -338,13 +339,15 @@ const insertarFoto = (data, res = null, socket = null) => {
           imageUrlThumb: imageUrlThumb || imageUrl,
           title,
           tags,
-          metadata
+          metadata,
+          uploader_name: userName || null
         };
 
         const confirmacion = {data: "ok" };
         io.emit('confirmacion', confirmacion);
 
-        io.emit('nueva_categoria', nuevaFoto.tags); 
+        // Emitir nueva categoría con el nombre del uploader
+        io.emit('nueva_categoria', { tags: nuevaFoto.tags, uploader_name: nuevaFoto.uploader_name });
 
         const mensaje = { data: nuevaFoto };
         
@@ -366,7 +369,8 @@ const insertarFoto = (data, res = null, socket = null) => {
           id: nuevaFoto.id,
           title: nuevaFoto.title,
           tags: nuevaFoto.tags,
-          metadata: nuevaFoto.metadata
+          metadata: nuevaFoto.metadata,
+          uploader_name: nuevaFoto.uploader_name
         });
 
         if (res) {
