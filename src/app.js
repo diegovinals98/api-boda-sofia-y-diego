@@ -24,7 +24,7 @@ app.use(express.json());
 
 // Configuración explícita de CORS
 const corsOptions = {
-  origin: ['https://memories.bodasofiaydiego.es', 'http://localhost:8080', 'https://rsvp.bodasofiaydiego.es', 'https://bodasofiaydiego.es'],
+  origin: ['https://memories.bodasofiaydiego.es', 'http://localhost:8080', 'https://rsvp.bodasofiaydiego.es', 'https://bodasofiaydiego.es', 'http://localhost:8081'],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Origin', 'X-Requested-With', 'Content-Type', 'Accept'],
