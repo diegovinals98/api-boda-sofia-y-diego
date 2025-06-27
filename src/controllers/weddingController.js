@@ -305,15 +305,15 @@ const getPhotoLikes = (req, res) => {
   });
 };
 
-// Obtener el número de likes por foto para todas las fotos de una categoría, incluyendo la lista de usuarios
+// Obtener el número de likes y comentarios por foto para todas las fotos de una categoría, incluyendo la lista de usuarios y el uploader_name
 const getLikesByCategory = (req, res) => {
   const tag = req.query.tag;
   if (!tag) {
     return res.status(400).json({ error: 'El parámetro tag es requerido' });
   }
-  // Seleccionar las fotos de la categoría
+  // Seleccionar las fotos de la categoría, incluyendo uploader_name
   const photosQuery = `
-    SELECT f.id AS photoId
+    SELECT f.id AS photoId, f.uploader_name
     FROM fotos_boda f
     WHERE JSON_SEARCH(f.tags, 'one', ?, NULL) IS NOT NULL
     ORDER BY f.uploaded_at DESC
@@ -328,29 +328,50 @@ const getLikesByCategory = (req, res) => {
     }
     // Obtener los likes y usuarios para cada foto
     const photoIds = photoResults.map(r => r.photoId);
+    const uploaderMap = {};
+    photoResults.forEach(r => { uploaderMap[r.photoId] = r.uploader_name; });
     const likesQuery = `
       SELECT photo_id, user_name
       FROM foto_likes
       WHERE photo_id IN (${photoIds.map(() => '?').join(',')})
+    `;
+    const commentsQuery = `
+      SELECT id_foto, COUNT(*) AS comentarios
+      FROM comentario
+      WHERE id_foto IN (${photoIds.map(() => '?').join(',')})
+      GROUP BY id_foto
     `;
     dbBoda.query(likesQuery, photoIds, (err, likeResults) => {
       if (err) {
         console.error('❌ Error al obtener likes por foto:', err);
         return res.status(500).json({ error: 'Error al obtener likes por foto' });
       }
-      // Agrupar usuarios por fotoId
-      const likesMap = {};
-      likeResults.forEach(like => {
-        if (!likesMap[like.photo_id]) likesMap[like.photo_id] = [];
-        likesMap[like.photo_id].push(like.user_name);
+      dbBoda.query(commentsQuery, photoIds, (err, commentResults) => {
+        if (err) {
+          console.error('❌ Error al obtener comentarios por foto:', err);
+          return res.status(500).json({ error: 'Error al obtener comentarios por foto' });
+        }
+        // Agrupar usuarios por fotoId
+        const likesMap = {};
+        likeResults.forEach(like => {
+          if (!likesMap[like.photo_id]) likesMap[like.photo_id] = [];
+          likesMap[like.photo_id].push(like.user_name);
+        });
+        // Agrupar número de comentarios por fotoId
+        const commentsMap = {};
+        commentResults.forEach(c => {
+          commentsMap[c.id_foto] = c.comentarios;
+        });
+        // Construir la respuesta
+        const likesByPhoto = photoIds.map(photoId => ({
+          photoId,
+          likes: likesMap[photoId] ? likesMap[photoId].length : 0,
+          users: likesMap[photoId] || [],
+          comentarios: commentsMap[photoId] || 0,
+          uploaded_by: uploaderMap[photoId] || null
+        }));
+        res.json({ tag, likesByPhoto });
       });
-      // Construir la respuesta
-      const likesByPhoto = photoIds.map(photoId => ({
-        photoId,
-        likes: likesMap[photoId] ? likesMap[photoId].length : 0,
-        users: likesMap[photoId] || []
-      }));
-      res.json({ tag, likesByPhoto });
     });
   });
 };
@@ -395,6 +416,22 @@ const updateUserName = (req, res) => {
     });
 };
 
+// Obtener los comentarios de una foto por id_foto
+const getCommentsByPhoto = (req, res) => {
+  const photoId = req.params.photoId;
+  if (!photoId) {
+    return res.status(400).json({ error: 'photoId es requerido' });
+  }
+  const query = `SELECT id, id_padre, comentario, user_id, id_foto, timestamp FROM comentario WHERE id_foto = ? ORDER BY timestamp ASC`;
+  dbBoda.query(query, [photoId], (err, results) => {
+    if (err) {
+      console.error('❌ Error al obtener comentarios:', err);
+      return res.status(500).json({ error: 'Error al obtener comentarios' });
+    }
+    res.json({ photoId, comentarios: results });
+  });
+};
+
 module.exports = {
   getAllGuests,
   addGuest,
@@ -404,5 +441,6 @@ module.exports = {
   uploadPhotoToS3,
   getPhotoLikes,
   getLikesByCategory,
-  updateUserName
+  updateUserName,
+  getCommentsByPhoto
 }; 

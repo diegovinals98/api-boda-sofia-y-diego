@@ -160,6 +160,50 @@ const setupWebSocket = (server) => {
       });
     });
 
+    // Unirse a un room específico de una foto
+    socket.on('join_photo_room', (data) => {
+      const { photoId } = data || {};
+      if (photoId && typeof photoId === 'string') {
+        socket.join(photoId);
+        console.log(`✅ Cliente unido al room de la foto: ${photoId}`);
+      }
+    });
+
+    // Salir de un room específico de una foto
+    socket.on('leave_photo_room', (data) => {
+      const { photoId } = data || {};
+      if (photoId && typeof photoId === 'string') {
+        socket.leave(photoId);
+        console.log(`✅ Cliente salió del room de la foto: ${photoId}`);
+      }
+    });
+
+    // Evento para guardar un nuevo comentario en la base de datos
+    socket.on('new_comment', async (data) => {
+      const { id_padre = null, comentario, user_id } = data || {};
+      // Obtener el id_foto del room en el que está el socket (debe ser el room de la foto)
+      const rooms = Array.from(socket.rooms);
+      // El primer room es el socket.id, buscamos el room que sea distinto y que tenga pinta de uuid
+      const id_foto = rooms.find(r => r !== socket.id && /^[0-9a-fA-F\-]{36}$/.test(r));
+      if (!comentario || !user_id || !id_foto) {
+        socket.emit('comment-status', { success: false, error: 'Faltan datos o no estás en el room de la foto' });
+        return;
+      }
+      const uuid = require('uuid');
+      const id = uuid.v4();
+      const query = `INSERT INTO comentario (id, id_padre, comentario, user_id, id_foto) VALUES (?, ?, ?, ?, ?)`;
+      dbBoda.query(query, [id, id_padre, comentario, user_id, id_foto], (err, result) => {
+        if (err) {
+          console.error('❌ Error al guardar comentario:', err);
+          socket.emit('comment-status', { success: false, error: err.message });
+          return;
+        }
+        socket.emit('comment-status', { success: true, id, id_padre, comentario, user_id, id_foto });
+        // Opcional: emitir a todos los del room de la foto el nuevo comentario
+        io.to(id_foto).emit('new_comment', { id, id_padre, comentario, user_id, id_foto, timestamp: new Date().toISOString() });
+      });
+    });
+
     socket.on('disconnect', () => {
       console.log('❌ Cliente desconectado, clientes restantes:', io.engine.clientsCount);
     });
