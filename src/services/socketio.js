@@ -453,6 +453,17 @@ const insertarFoto = (data, res = null, socket = null) => {
   }
 };
 
+// Función para formatear nombre completo (primera letra en mayúscula de cada palabra)
+const formatearNombreCompleto = (nombre) => {
+  if (!nombre || typeof nombre !== 'string') return nombre;
+  
+  return nombre
+    .toLowerCase()
+    .split(' ')
+    .map(palabra => palabra.charAt(0).toUpperCase() + palabra.slice(1))
+    .join(' ');
+};
+
 const insertarInvitado = (data, res = null, socket = null) => {
   const {
     nombre_completo,
@@ -469,6 +480,9 @@ const insertarInvitado = (data, res = null, socket = null) => {
     color
   } = data;
 
+  // Formatear el nombre completo antes de insertar
+  const nombreFormateado = formatearNombreCompleto(nombre_completo);
+
   const query = `
     INSERT INTO invitados (
       nombre_completo, asistira, numero_acompanantes,
@@ -477,7 +491,7 @@ const insertarInvitado = (data, res = null, socket = null) => {
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
   dbBoda.query(query, [
-    nombre_completo,
+    nombreFormateado,
     asistira,
     numero_acompanantes,
     restricciones,
@@ -498,7 +512,7 @@ const insertarInvitado = (data, res = null, socket = null) => {
 
     const nuevoInvitado = {
       id: result.insertId,
-      nombre_completo,
+      nombre_completo: nombreFormateado,
       asistira,
       numero_acompanantes,
       restricciones,
@@ -523,8 +537,11 @@ const insertarInvitado = (data, res = null, socket = null) => {
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
       acompanantes.forEach(acompanante => {
+        // Formatear también el nombre del acompañante
+        const nombreAcompananteFormateado = formatearNombreCompleto(acompanante.nombre_completo);
+        
         dbBoda.query(acompanantesQuery, [
-          acompanante.nombre_completo,
+          nombreAcompananteFormateado,
           asistira,
           0,
           acompanante.restricciones,
@@ -542,14 +559,14 @@ const insertarInvitado = (data, res = null, socket = null) => {
             // Enviar información del acompañante por Socket.IO
             const nuevoAcompanante = {
               id: acompananteResult.insertId,
-              nombre_completo: acompanante.nombre_completo,
+              nombre_completo: nombreAcompananteFormateado,
               asistira: asistira,
               restricciones: acompanante.restricciones,
               asistencia_autobus: acompanante.asistencia_autobus,
               tipo_autobus: acompanante.tipo_autobus,
               cancion_preferencia: acompanante.cancion_preferencia || '',
               plataforma_musica: acompanante.plataforma_musica || '',
-              invitado_principal_id: nombre_completo,
+              invitado_principal_id: nombreFormateado,
               color: acompanante.color,
               fecha_respuesta: new Date().toISOString()
             };
@@ -567,7 +584,7 @@ const insertarInvitado = (data, res = null, socket = null) => {
     const mensaje = { tipo: 'nuevo_invitado', data: nuevoInvitado };
     io.emit('nuevo_invitado', mensaje);
 
-    send_email(email, nombre_completo, asistira, numero_acompanantes, restricciones, asistencia_autobus, mensaje_para_novios, tipo_autobus, cancion_preferencia, plataforma_musica, color, acompanantes);
+    send_email(email, nombreFormateado, asistira, numero_acompanantes, restricciones, asistencia_autobus, mensaje_para_novios, tipo_autobus, cancion_preferencia, plataforma_musica, color, acompanantes);
     console.log('✅ Nuevo invitado y acompañantes agregados y emitidos por Socket.IO:', nuevoInvitado);
 
     if (res) {
